@@ -73,9 +73,9 @@ describe('MyntloClient', () => {
 
     const client = new MyntloClient({ apiKey: 'test-key', timeoutMs: 10, maxRetries: 0 });
     const promise = client.meetings.list();
+    const expectation = expect(promise).rejects.toBeInstanceOf(MyntloTimeoutError);
 
     await vi.advanceTimersByTimeAsync(20);
-
-    await expect(promise).rejects.toBeInstanceOf(MyntloTimeoutError);
+    await expectation;
   });
 });
