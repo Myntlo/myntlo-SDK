@@ -59,15 +59,22 @@ describe('Myntlo errors', () => {
 
 async function signWebhook(payload: string, secret: string): Promise<string> {
   const encoder = new TextEncoder();
-  const key = await globalThis.crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const signature = await globalThis.crypto.subtle.sign('HMAC', key, encoder.encode(payload));
-  return bufferToHex(new Uint8Array(signature));
+  const payloadBytes = encoder.encode(payload);
+
+  if (globalThis.crypto?.subtle) {
+    const key = await globalThis.crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const signature = await globalThis.crypto.subtle.sign('HMAC', key, payloadBytes);
+    return bufferToHex(new Uint8Array(signature));
+  }
+
+  const { createHmac } = await import('node:crypto');
+  return createHmac('sha256', secret).update(payloadBytes).digest('hex');
 }
 
 function bufferToHex(bytes: Uint8Array): string {
