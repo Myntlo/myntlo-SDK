@@ -1,0 +1,35 @@
+# version control
+.git
+.gitignore
+.github
+
+# dependencies (installed inside the image)
+node_modules
+
+# build output (rebuilt inside the image)
+dist
+*.tsbuildinfo
+
+# test & coverage artifacts
+coverage
+.nyc_output
+tests
+
+# local env files (secrets must come from runtime env, not baked into the image)
+.env
+.env.*
+
+# editor & OS noise
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+
+# logs
+*.log
+
+# docs / examples (not needed at runtime)
+examples
+README.md
+CHANGELOG.md
