@@ -1,0 +1,5 @@
+# Default owner for everything
+* @Myntlo/sdk-maintainers
+
+# Release workflow requires explicit approval
+.github/workflows/release.yml @Myntlo/sdk-maintainers

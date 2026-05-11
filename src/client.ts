@@ -123,7 +123,9 @@ export class MyntloClient {
 
   /** Resolve a path and query into a full API URL. */
   resolveUrl(path: string, query?: Record<string, string | number | boolean | undefined>): string {
-    const url = new URL(path, this.baseUrl);
+    const baseUrl = this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`;
+    const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+    const url = new URL(normalizedPath, baseUrl);
     if (query) {
       for (const [key, value] of Object.entries(query)) {
         if (value !== undefined) {
@@ -282,8 +284,9 @@ function mergeAbortSignals(signals: Array<AbortSignal | undefined>): AbortSignal
   return controller.signal;
 }
 
-async function computeHmacSHA256(payload: Uint8Array, secret: string): Promise<string> {
+async function computeHmacSHA256(payload: Uint8Array | ArrayBuffer, secret: string): Promise<string> {
   if (globalThis.crypto?.subtle) {
+    const payloadBytes = payload instanceof Uint8Array ? new Uint8Array(payload) : new Uint8Array(payload);
     const key = await globalThis.crypto.subtle.importKey(
       'raw',
       new TextEncoder().encode(secret),
@@ -291,13 +294,13 @@ async function computeHmacSHA256(payload: Uint8Array, secret: string): Promise<s
       false,
       ['sign'],
     );
-    const signature = await globalThis.crypto.subtle.sign('HMAC', key, payload);
+    const signature = await globalThis.crypto.subtle.sign('HMAC', key, payloadBytes);
     return bufferToHex(new Uint8Array(signature));
   }
 
-  const nodeCrypto = await import('node:crypto');
-  const signature = nodeCrypto.createHmac('sha256', secret).update(payload).digest('hex');
-  return signature;
+  const { createHmac } = await import('node:crypto');
+  const data = payload instanceof ArrayBuffer ? new Uint8Array(payload) : payload;
+  return createHmac('sha256', secret).update(data).digest('hex');
 }
 
 function bufferToHex(bytes: Uint8Array): string {

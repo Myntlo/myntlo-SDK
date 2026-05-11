@@ -145,7 +145,7 @@ async function normalizeUploadable(
   }
 
   if (file instanceof ArrayBuffer) {
-    const buffer = new Uint8Array(file);
+    const buffer = ensureArrayBuffer(new Uint8Array(file));
     if (onProgress) {
       onProgress({ loaded: buffer.byteLength, total: buffer.byteLength, percent: 100 });
     }
@@ -153,18 +153,20 @@ async function normalizeUploadable(
   }
 
   if (file instanceof Uint8Array) {
+    const buffer = ensureArrayBuffer(file);
     if (onProgress) {
-      onProgress({ loaded: file.byteLength, total: file.byteLength, percent: 100 });
+      onProgress({ loaded: buffer.byteLength, total: buffer.byteLength, percent: 100 });
     }
-    return { body: new Blob([file]) };
+    return { body: new Blob([buffer]) };
   }
 
   if (isAsyncIterable(file)) {
-    const chunks: Uint8Array[] = [];
+    const chunks: Uint8Array<ArrayBuffer>[] = [];
     let loaded = 0;
     for await (const chunk of file) {
-      chunks.push(chunk);
-      loaded += chunk.byteLength;
+      const buffer = ensureArrayBuffer(chunk);
+      chunks.push(buffer);
+      loaded += buffer.byteLength;
       if (onProgress) {
         onProgress({ loaded });
       }
@@ -177,7 +179,7 @@ async function normalizeUploadable(
 
   if (file instanceof ReadableStream) {
     const reader = file.getReader();
-    const chunks: Uint8Array[] = [];
+    const chunks: Uint8Array<ArrayBuffer>[] = [];
     let loaded = 0;
     while (true) {
       const { done, value } = await reader.read();
@@ -185,8 +187,9 @@ async function normalizeUploadable(
         break;
       }
       if (value) {
-        chunks.push(value);
-        loaded += value.byteLength;
+        const buffer = ensureArrayBuffer(value);
+        chunks.push(buffer);
+        loaded += buffer.byteLength;
         if (onProgress) {
           onProgress({ loaded });
         }
@@ -207,4 +210,13 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<Uint8Array> {
 
 function isFile(value: Blob): value is File {
   return typeof (value as File).name === 'string';
+}
+
+// TypeScript 5.7 made Uint8Array generic; Blob only accepts Uint8Array<ArrayBuffer>
+// (not SharedArrayBuffer). Copy into a plain ArrayBuffer when needed.
+function ensureArrayBuffer(value: Uint8Array): Uint8Array<ArrayBuffer> {
+  if (value.buffer instanceof ArrayBuffer) {
+    return value as Uint8Array<ArrayBuffer>;
+  }
+  return new Uint8Array(value) as Uint8Array<ArrayBuffer>;
 }
