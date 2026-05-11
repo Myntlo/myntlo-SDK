@@ -1,0 +1,1 @@
+This folder contains Vitest test suites for the Myntlo SDK.
