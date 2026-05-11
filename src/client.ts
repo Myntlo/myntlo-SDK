@@ -298,9 +298,9 @@ async function computeHmacSHA256(payload: Uint8Array | ArrayBuffer, secret: stri
     return bufferToHex(new Uint8Array(signature));
   }
 
-  throw new MyntloAPIError({
-    message: 'Web Crypto is unavailable in this environment.',
-  });
+  const { createHmac } = await import('node:crypto');
+  const data = payload instanceof ArrayBuffer ? new Uint8Array(payload) : payload;
+  return createHmac('sha256', secret).update(data).digest('hex');
 }
 
 function bufferToHex(bytes: Uint8Array): string {
