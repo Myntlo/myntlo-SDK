@@ -1,4 +1,5 @@
 import type { ActionItemStatus } from './actionItem';
+import type { Meeting } from './meeting';
 
 export type ListOptions = {
   page?: number;
@@ -24,6 +25,38 @@ export type UploadMeetingOptions = {
   title?: string;
   participantEmails?: string[];
   onProgress?: (progress: UploadProgress) => void;
+};
+
+export type UploadInput = {
+  file: Uploadable;
+  title?: string;
+  participantEmails?: string[];
+};
+
+export type UploadResult = Meeting;
+
+export type PresignedUrlInput = {
+  filename: string;
+  contentType: string;
+  size?: number;
+};
+
+export type PresignedUrlResult = {
+  uploadId: string;
+  uploadUrl: string;
+  key: string;
+};
+
+export type UploadCompleteInput = {
+  uploadId: string;
+  title?: string;
+  participantEmails?: string[];
+};
+
+export type MyntloErrorResponse = {
+  message: string;
+  code?: string;
+  details?: unknown;
 };
 
 export type PaginationIteratorOptions = ListOptions;

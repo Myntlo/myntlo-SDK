@@ -7,28 +7,52 @@ import type {
 } from '../types';
 import type { MyntloClient } from '../client';
 
+export type ActionItemCreateInput = {
+  meetingId: string;
+  assignedToName?: string;
+  task: string;
+  dueDate?: string | null;
+};
+
+export type ActionItemUpdateInput = {
+  assignedToName?: string;
+  task?: string;
+  dueDate?: string | null;
+  status?: ActionItemStatus;
+};
+
 export class ActionItemsResource {
   constructor(private readonly client: MyntloClient) {}
 
-  /** List action items with pagination. */
   list(options: ListOptions = {}): Promise<ListResponse<ActionItem>> {
     return this.client.request('GET', '/action-items', { query: options });
   }
 
-  /** Get an action item by ID. */
   get(id: string): Promise<ActionItem> {
     return this.client.request('GET', `/action-items/${encodeURIComponent(id)}`);
   }
 
-  /** Update an action item status. */
-  updateStatus(id: string, status: ActionItemStatus): Promise<ActionItem> {
-    const body: ActionItemUpdateStatusRequest = { status };
-    return this.client.request('PATCH', `/action-items/${encodeURIComponent(id)}/status`, {
-      body,
-    });
+  create(data: ActionItemCreateInput): Promise<ActionItem> {
+    return this.client.request('POST', '/action-items', { body: data });
   }
 
-  /** Iterate through all action items. */
+  update(id: string, data: ActionItemUpdateInput): Promise<ActionItem> {
+    return this.client.request('PATCH', `/action-items/${encodeURIComponent(id)}`, { body: data });
+  }
+
+  updateStatus(id: string, status: ActionItemStatus): Promise<ActionItem> {
+    const body: ActionItemUpdateStatusRequest = { status };
+    return this.client.request('PATCH', `/action-items/${encodeURIComponent(id)}/status`, { body });
+  }
+
+  markDone(id: string): Promise<ActionItem> {
+    return this.updateStatus(id, 'done');
+  }
+
+  delete(id: string): Promise<void> {
+    return this.client.request('DELETE', `/action-items/${encodeURIComponent(id)}`);
+  }
+
   async *iterate(options: ListOptions = {}): AsyncGenerator<ActionItem> {
     let page = options.page ?? 1;
     const perPage = options.perPage ?? 50;

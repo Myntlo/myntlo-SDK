@@ -10,6 +10,7 @@ import { ActionItemsResource } from './resources/actionItems';
 import { DecisionsResource } from './resources/decisions';
 import { MeetingsResource } from './resources/meetings';
 import { OrganizationsResource } from './resources/organizations';
+import { UploadsResource } from './resources/uploads';
 
 export type MyntloClientOptions = {
   apiKey: string;
@@ -31,6 +32,7 @@ export class MyntloClient {
   readonly decisions: DecisionsResource;
   readonly actionItems: ActionItemsResource;
   readonly organizations: OrganizationsResource;
+  readonly uploads: UploadsResource;
 
   private readonly apiKey: string;
   private readonly baseUrl: string;
@@ -47,6 +49,7 @@ export class MyntloClient {
     this.decisions = new DecisionsResource(this);
     this.actionItems = new ActionItemsResource(this);
     this.organizations = new OrganizationsResource(this);
+    this.uploads = new UploadsResource(this);
   }
 
   /** Verify a webhook signature and parse the event payload. */
