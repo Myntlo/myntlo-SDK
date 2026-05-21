@@ -2,49 +2,160 @@ import type {
   ListOptions,
   ListResponse,
   Meeting,
+  MeetingExportFormat,
   MeetingExtractions,
+  MeetingStatusResponse,
   MeetingTranscript,
   PaginationIteratorOptions,
-  UploadMeetingOptions,
+  PresignedUrlResult,
+  UploadInput,
   Uploadable,
 } from '../types';
 import type { MyntloClient } from '../client';
-import { MyntloAPIError } from '../errors';
+import { MyntloAPIError, MyntloTimeoutError } from '../errors';
+
+export type WaitUntilDoneOptions = {
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+};
+
+export type MeetingUpdateInput = {
+  title?: string;
+  participantEmails?: string[];
+};
+
+export type NodeUploadInput = {
+  path: string;
+  title?: string;
+  participantEmails?: string[];
+};
+
+const MIME_TYPES: Record<string, string> = {
+  mp3: 'audio/mpeg',
+  mp4: 'video/mp4',
+  m4a: 'audio/mp4',
+  wav: 'audio/wav',
+  webm: 'audio/webm',
+  ogg: 'audio/ogg',
+  flac: 'audio/flac',
+  aac: 'audio/aac',
+};
 
 export class MeetingsResource {
   constructor(private readonly client: MyntloClient) {}
 
-  /** List meetings with pagination. */
   list(options: ListOptions = {}): Promise<ListResponse<Meeting>> {
     return this.client.request('GET', '/meetings', { query: options });
   }
 
-  /** Get a meeting by ID. */
   get(id: string): Promise<Meeting> {
     return this.client.request('GET', `/meetings/${encodeURIComponent(id)}`);
   }
 
-  /** Upload a meeting file with optional metadata. */
-  async upload(file: Uploadable, options: UploadMeetingOptions = {}): Promise<Meeting> {
-    if (options.onProgress && typeof XMLHttpRequest !== 'undefined') {
-      return this.uploadWithXHR(file, options);
-    }
-
-    const form = await buildMeetingFormData(file, options);
-    return this.client.request('POST', '/meetings/upload', { body: form });
+  getStatus(id: string): Promise<MeetingStatusResponse> {
+    return this.client.request('GET', `/meetings/${encodeURIComponent(id)}/status`);
   }
 
-  /** Get the transcript for a meeting. */
+  update(id: string, data: MeetingUpdateInput): Promise<Meeting> {
+    return this.client.request('PATCH', `/meetings/${encodeURIComponent(id)}`, { body: data });
+  }
+
+  delete(id: string): Promise<void> {
+    return this.client.request('DELETE', `/meetings/${encodeURIComponent(id)}`);
+  }
+
+  export(id: string, options: { format: MeetingExportFormat }): Promise<string> {
+    return this.client.request('GET', `/meetings/${encodeURIComponent(id)}/export`, {
+      query: { format: options.format },
+    });
+  }
+
+  async upload(input: UploadInput): Promise<Meeting> {
+    const { file, title, participantEmails } = input;
+    const filename = file instanceof File ? file.name : 'upload';
+    const contentType = file instanceof File && file.type ? file.type : 'audio/mpeg';
+    const size = file instanceof Blob ? file.size : undefined;
+
+    const presigned = await this.client.request<PresignedUrlResult>('POST', '/uploads/presign', {
+      body: { filename, contentType, size },
+    });
+
+    const blob = await toBlob(file);
+    await fetch(presigned.uploadUrl, {
+      method: 'PUT',
+      body: blob,
+      headers: { 'Content-Type': contentType },
+    });
+
+    return this.client.request<Meeting>('POST', '/uploads/complete', {
+      body: { uploadId: presigned.uploadId, title, participantEmails },
+    });
+  }
+
+  async uploadFile(input: NodeUploadInput): Promise<Meeting> {
+    const { readFile } = await import('node:fs/promises');
+    const { basename } = await import('node:path');
+
+    const buffer = await readFile(input.path);
+    const filename = basename(input.path);
+    const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+    const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
+
+    const presigned = await this.client.request<PresignedUrlResult>('POST', '/uploads/presign', {
+      body: { filename, contentType, size: buffer.byteLength },
+    });
+
+    await fetch(presigned.uploadUrl, {
+      method: 'PUT',
+      body: new Blob([new Uint8Array(buffer)]),
+      headers: { 'Content-Type': contentType },
+    });
+
+    return this.client.request<Meeting>('POST', '/uploads/complete', {
+      body: {
+        uploadId: presigned.uploadId,
+        title: input.title,
+        participantEmails: input.participantEmails,
+      },
+    });
+  }
+
+  async waitUntilDone(id: string, options: WaitUntilDoneOptions = {}): Promise<Meeting> {
+    const pollIntervalMs = options.pollIntervalMs ?? 3000;
+    const timeoutMs = options.timeoutMs ?? 600000;
+    const deadline = Date.now() + timeoutMs;
+
+    while (true) {
+      const statusResponse = await this.getStatus(id);
+
+      if (statusResponse.status === 'done') {
+        return this.get(id);
+      }
+
+      if (statusResponse.status === 'failed') {
+        throw new MyntloAPIError({
+          message: `Meeting ${id} processing failed.`,
+        });
+      }
+
+      if (Date.now() + pollIntervalMs > deadline) {
+        throw new MyntloTimeoutError({
+          message: `Meeting ${id} did not complete within ${timeoutMs}ms.`,
+        });
+      }
+
+      await sleep(pollIntervalMs);
+    }
+  }
+
   getTranscript(id: string): Promise<MeetingTranscript> {
     return this.client.request('GET', `/meetings/${encodeURIComponent(id)}/transcript`);
   }
 
-  /** Get extractions for a meeting. */
   getExtractions(id: string): Promise<MeetingExtractions> {
     return this.client.request('GET', `/meetings/${encodeURIComponent(id)}/extractions`);
   }
 
-  /** Iterate through all meetings. */
   async *iterate(options: PaginationIteratorOptions = {}): AsyncGenerator<Meeting> {
     let page = options.page ?? 1;
     const perPage = options.perPage ?? 50;
@@ -59,161 +170,45 @@ export class MeetingsResource {
       page += 1;
     }
   }
-
-  private async uploadWithXHR(file: Uploadable, options: UploadMeetingOptions): Promise<Meeting> {
-    const form = await buildMeetingFormData(file, options);
-    const url = this.client.resolveUrl('/meetings/upload');
-    const apiKey = this.client.getApiKey();
-
-    return new Promise<Meeting>((resolve, reject) => {
-      const request = new XMLHttpRequest();
-      request.open('POST', url, true);
-      request.setRequestHeader('Authorization', `Bearer ${apiKey}`);
-      request.responseType = 'json';
-
-      request.upload.onprogress = (event: ProgressEvent<EventTarget>) => {
-        if (!options.onProgress) {
-          return;
-        }
-        const total = event.lengthComputable ? event.total : undefined;
-        const percent = total ? Math.round((event.loaded / total) * 100) : undefined;
-        options.onProgress({ loaded: event.loaded, total, percent });
-      };
-
-      request.onerror = () => {
-        reject(
-          new MyntloAPIError({
-            message: 'Upload failed due to a network error.',
-          }),
-        );
-      };
-
-      request.onload = () => {
-        const status = request.status;
-        if (status >= 200 && status < 300) {
-          resolve(request.response as Meeting);
-          return;
-        }
-        reject(
-          new MyntloAPIError({
-            message: request.response?.message ?? 'Upload failed.',
-            statusCode: status,
-            rawResponse: request.response,
-          }),
-        );
-      };
-
-      request.send(form);
-    });
-  }
 }
 
-async function buildMeetingFormData(
-  file: Uploadable,
-  options: UploadMeetingOptions,
-): Promise<FormData> {
-  const form = new FormData();
-  const filePart = await normalizeUploadable(file, options.onProgress);
-  form.append('file', filePart.body, filePart.filename);
-
-  if (options.title) {
-    form.append('title', options.title);
-  }
-
-  if (options.participantEmails && options.participantEmails.length > 0) {
-    form.append('participantEmails', JSON.stringify(options.participantEmails));
-  }
-
-  return form;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-type NormalizedUpload = {
-  body: Blob;
-  filename?: string;
-};
-
-async function normalizeUploadable(
-  file: Uploadable,
-  onProgress?: (progress: { loaded: number; total?: number; percent?: number }) => void,
-): Promise<NormalizedUpload> {
+async function toBlob(file: Uploadable): Promise<Blob> {
   if (file instanceof Blob) {
-    if (onProgress) {
-      onProgress({ loaded: 0, total: file.size, percent: 0 });
-      onProgress({ loaded: file.size, total: file.size, percent: 100 });
-    }
-    return { body: file, filename: isFile(file) ? file.name : undefined };
+    return file;
   }
-
   if (file instanceof ArrayBuffer) {
-    const buffer = ensureArrayBuffer(new Uint8Array(file));
-    if (onProgress) {
-      onProgress({ loaded: buffer.byteLength, total: buffer.byteLength, percent: 100 });
-    }
-    return { body: new Blob([buffer]) };
+    return new Blob([file]);
   }
-
   if (file instanceof Uint8Array) {
-    const buffer = ensureArrayBuffer(file);
-    if (onProgress) {
-      onProgress({ loaded: buffer.byteLength, total: buffer.byteLength, percent: 100 });
-    }
-    return { body: new Blob([buffer]) };
+    return new Blob([ensureArrayBuffer(file)]);
   }
 
-  if (isAsyncIterable(file)) {
-    const chunks: Uint8Array<ArrayBuffer>[] = [];
-    let loaded = 0;
-    for await (const chunk of file) {
-      const buffer = ensureArrayBuffer(chunk);
-      chunks.push(buffer);
-      loaded += buffer.byteLength;
-      if (onProgress) {
-        onProgress({ loaded });
-      }
-    }
-    if (onProgress) {
-      onProgress({ loaded, total: loaded, percent: 100 });
-    }
-    return { body: new Blob(chunks) };
-  }
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
 
   if (file instanceof ReadableStream) {
     const reader = file.getReader();
-    const chunks: Uint8Array<ArrayBuffer>[] = [];
-    let loaded = 0;
     while (true) {
       const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      if (value) {
-        const buffer = ensureArrayBuffer(value);
-        chunks.push(buffer);
-        loaded += buffer.byteLength;
-        if (onProgress) {
-          onProgress({ loaded });
-        }
-      }
+      if (done) break;
+      if (value) chunks.push(ensureArrayBuffer(value));
     }
-    if (onProgress) {
-      onProgress({ loaded, total: loaded, percent: 100 });
+  } else if (isAsyncIterable(file)) {
+    for await (const chunk of file) {
+      chunks.push(ensureArrayBuffer(chunk));
     }
-    return { body: new Blob(chunks) };
   }
 
-  return { body: new Blob() };
+  return new Blob(chunks);
 }
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<Uint8Array> {
   return typeof (value as AsyncIterable<Uint8Array>)?.[Symbol.asyncIterator] === 'function';
 }
 
-function isFile(value: Blob): value is File {
-  return typeof (value as File).name === 'string';
-}
-
-// TypeScript 5.7 made Uint8Array generic; Blob only accepts Uint8Array<ArrayBuffer>
-// (not SharedArrayBuffer). Copy into a plain ArrayBuffer when needed.
 function ensureArrayBuffer(value: Uint8Array): Uint8Array<ArrayBuffer> {
   if (value.buffer instanceof ArrayBuffer) {
     return value as Uint8Array<ArrayBuffer>;
