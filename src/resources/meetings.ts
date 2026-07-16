@@ -137,7 +137,7 @@ export class MeetingsResource {
     const timeoutMs = options.timeoutMs ?? 600000;
     const deadline = Date.now() + timeoutMs;
 
-    while (true) {
+    for (;;) {
       const statusResponse = await this.getStatus(id);
 
       if (statusResponse.status === 'done') {
@@ -203,7 +203,7 @@ async function toBlob(file: Uploadable): Promise<Blob> {
 
   if (file instanceof ReadableStream) {
     const reader = file.getReader();
-    while (true) {
+    for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       if (value) chunks.push(ensureArrayBuffer(value));
