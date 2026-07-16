@@ -70,6 +70,13 @@ export class MeetingsResource {
     });
   }
 
+  /**
+   * Upload a meeting file directly using the client.
+   * @remarks Server-side only. This sends your full API key with every
+   * request. Never call this from browser/client-side code. For browser
+   * uploads, mint a presigned URL server-side via
+   * `client.uploads.createPresignedUrl(...)` and PUT to it from the browser.
+   */
   async upload(input: UploadInput): Promise<Meeting> {
     const { file, title, participantEmails } = input;
     const filename = file instanceof File ? file.name : 'upload';
@@ -92,6 +99,11 @@ export class MeetingsResource {
     });
   }
 
+  /**
+   * Upload a meeting file from a local path (Node.js only).
+   * @remarks Server-side only. Uses `node:fs` and sends your full API key
+   * with every request.
+   */
   async uploadFile(input: NodeUploadInput): Promise<Meeting> {
     const { readFile } = await import('node:fs/promises');
     const { basename } = await import('node:path');

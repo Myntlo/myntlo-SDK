@@ -23,14 +23,17 @@ const myntlo = new MyntloClient({
 });
 ```
 
+> **Security:** Your `apiKey` grants full account access (it is sent as `Authorization: Bearer <apiKey>` on every request and can list, read, and delete meetings, action items, and organization members). Never embed it in browser or other client-side code. For direct-from-browser uploads, use the presigned-URL pattern shown in "Uploading a meeting -> From the browser".
+
 ## Uploading a meeting
 
-**Browser** — pass a `File` or `Blob`:
+### Server-side (recommended)
+
+Construct the client with your real API key on the backend, then call `meetings.upload()` or `meetings.uploadFile()` directly there.
+
+**Pass a `File` or `Blob`:**
 
 ```ts
-const fileInput = document.querySelector('input[type="file"]')!;
-const file = fileInput.files![0];
-
 const meeting = await myntlo.meetings.upload({
   file,
   title: 'Engineering Standup',
@@ -40,7 +43,7 @@ const meeting = await myntlo.meetings.upload({
 console.log('Meeting created:', meeting.id, meeting.status);
 ```
 
-**Node.js** — pass a file path:
+**Node.js - pass a file path:**
 
 ```ts
 const meeting = await myntlo.meetings.uploadFile({
@@ -50,6 +53,48 @@ const meeting = await myntlo.meetings.uploadFile({
 
 console.log('Meeting created:', meeting.id);
 ```
+
+### From the browser (direct upload)
+
+Never construct `MyntloClient` or reference your `apiKey` in browser code. Instead, split the upload across your backend and the browser:
+
+1. **Backend** mints a short-lived, single-purpose presigned URL using the real API key:
+
+   ```ts
+   // Runs on your server
+   const { uploadId, uploadUrl } = await myntlo.uploads.createPresignedUrl({
+     filename: file.name,
+     contentType: file.type,
+     size: file.size,
+   });
+
+   // Return only { uploadId, uploadUrl } to the browser - never the apiKey
+   ```
+
+2. **Browser** uploads the file straight to storage with a plain `fetch` - no `MyntloClient`, no `apiKey`:
+
+   ```ts
+   // Runs in the browser
+   await fetch(uploadUrl, {
+     method: 'PUT',
+     body: file,
+     headers: { 'Content-Type': file.type },
+   });
+   ```
+
+3. **Browser** notifies your backend that the upload finished, and **backend** finalizes it:
+
+   ```ts
+   // Runs on your server, after the browser confirms the PUT succeeded
+   const meeting = await myntlo.uploads.complete({
+     uploadId,
+     title: 'Engineering Standup',
+   });
+   ```
+
+The presigned URL is short-lived and can only be used to `PUT` that one object, which is why it's safe to hand to the browser - unlike the API key, which grants full account access indefinitely.
+
+> **Do not do this:** calling `myntlo.meetings.upload()` directly from browser code leaks your API key, because that method itself sends your key with every request (to create the presigned URL and to finalize the upload). Only call `meetings.upload()` / `meetings.uploadFile()` server-side.
 
 ## Waiting for processing to finish
 
@@ -151,22 +196,26 @@ for await (const decision of myntlo.decisions.iterate()) {
 
 ## Low-level upload API
 
+`myntlo.uploads.createPresignedUrl()` and `myntlo.uploads.complete()` are the two calls that power the browser upload flow described in ["Uploading a meeting -> From the browser"](#from-the-browser-direct-upload) - see that section for the full, canonical example (including which parts run on the backend vs. the browser).
+
+Both `createPresignedUrl()` and `complete()` must be called server-side with your real API key; only the resulting `uploadUrl` should ever be sent to the browser.
+
 ```ts
-// Create a presigned URL manually
+// Create a presigned URL manually (server-side)
 const { uploadId, uploadUrl } = await myntlo.uploads.createPresignedUrl({
   filename: 'meeting.mp3',
   contentType: 'audio/mpeg',
   size: 1048576,
 });
 
-// Upload directly to storage
+// Upload directly to storage (browser-side, no apiKey involved)
 await fetch(uploadUrl, {
   method: 'PUT',
   body: fileBlob,
   headers: { 'Content-Type': 'audio/mpeg' },
 });
 
-// Finalize to create the meeting record
+// Finalize to create the meeting record (server-side)
 const meeting = await myntlo.uploads.complete({
   uploadId,
   title: 'Q3 Planning',
