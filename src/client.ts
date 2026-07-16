@@ -6,6 +6,7 @@ import {
   MyntloTimeoutError,
 } from './errors';
 import type { WebhookEvent } from './types';
+import { computeHmacSHA256, timingSafeEqualHex } from './internal/webhookCrypto';
 import { ActionItemsResource } from './resources/actionItems';
 import { DecisionsResource } from './resources/decisions';
 import { MeetingsResource } from './resources/meetings';
@@ -60,7 +61,7 @@ export class MyntloClient {
   ): Promise<T> {
     const payloadBytes = typeof payload === 'string' ? new TextEncoder().encode(payload) : payload;
     const expected = await computeHmacSHA256(payloadBytes, secret);
-    const isValid = timingSafeEqual(expected, signature);
+    const isValid = await timingSafeEqualHex(expected, signature);
 
     if (!isValid) {
       throw new MyntloAuthError({
@@ -285,41 +286,4 @@ function mergeAbortSignals(signals: Array<AbortSignal | undefined>): AbortSignal
   }
 
   return controller.signal;
-}
-
-async function computeHmacSHA256(payload: Uint8Array | ArrayBuffer, secret: string): Promise<string> {
-  if (globalThis.crypto?.subtle) {
-    const payloadBytes = payload instanceof Uint8Array ? new Uint8Array(payload) : new Uint8Array(payload);
-    const key = await globalThis.crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign'],
-    );
-    const signature = await globalThis.crypto.subtle.sign('HMAC', key, payloadBytes);
-    return bufferToHex(new Uint8Array(signature));
-  }
-
-  const { createHmac } = await import('node:crypto');
-  const data = payload instanceof ArrayBuffer ? new Uint8Array(payload) : payload;
-  return createHmac('sha256', secret).update(data).digest('hex');
-}
-
-function bufferToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function timingSafeEqual(expected: string, received: string): boolean {
-  if (expected.length !== received.length) {
-    return false;
-  }
-
-  let result = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    result |= expected.charCodeAt(i) ^ received.charCodeAt(i);
-  }
-  return result === 0;
 }

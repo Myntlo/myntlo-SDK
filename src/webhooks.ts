@@ -1,4 +1,5 @@
 import { MyntloAuthError } from './errors';
+import { computeHmacSHA256, timingSafeEqualHex } from './internal/webhookCrypto';
 
 // TODO: Backend webhook signing format required:
 // The Myntlo API must sign outgoing webhook payloads using HMAC-SHA256.
@@ -18,7 +19,7 @@ export async function verifyMyntloWebhook<T = unknown>(input: VerifyWebhookInput
   const payloadBytes = typeof payload === 'string' ? new TextEncoder().encode(payload) : payload;
   const expected = await computeHmacSHA256(payloadBytes, secret);
 
-  if (!timingSafeEqual(expected, signature)) {
+  if (!(await timingSafeEqualHex(expected, signature))) {
     throw new MyntloAuthError({
       message: 'Invalid webhook signature.',
       statusCode: 401,
@@ -27,38 +28,4 @@ export async function verifyMyntloWebhook<T = unknown>(input: VerifyWebhookInput
 
   const payloadText = typeof payload === 'string' ? payload : new TextDecoder().decode(payload);
   return JSON.parse(payloadText) as T;
-}
-
-async function computeHmacSHA256(payload: Uint8Array, secret: string): Promise<string> {
-  if (globalThis.crypto?.subtle) {
-    const key = await globalThis.crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign'],
-    );
-    const signature = await globalThis.crypto.subtle.sign('HMAC', key, new Uint8Array(payload));
-    return bufferToHex(new Uint8Array(signature));
-  }
-
-  const { createHmac } = await import('node:crypto');
-  return createHmac('sha256', secret).update(payload).digest('hex');
-}
-
-function bufferToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function timingSafeEqual(expected: string, received: string): boolean {
-  if (expected.length !== received.length) {
-    return false;
-  }
-  let result = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    result |= expected.charCodeAt(i) ^ received.charCodeAt(i);
-  }
-  return result === 0;
 }
