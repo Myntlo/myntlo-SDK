@@ -19,7 +19,6 @@ import { MyntloClient } from '@myntlo/sdk';
 
 const myntlo = new MyntloClient({
   apiKey: process.env.MYNTLO_API_KEY!,
-  baseUrl: 'https://api.myntlo.com',
 });
 ```
 

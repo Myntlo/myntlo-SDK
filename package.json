@@ -3,6 +3,21 @@
   "version": "0.1.0",
   "description": "Official Myntlo API SDK for Node.js and modern browsers.",
   "license": "MIT",
+  "homepage": "https://docs.myntlo.co",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Myntlo/myntlo-SDK.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Myntlo/myntlo-SDK/issues"
+  },
+  "keywords": [
+    "myntlo",
+    "meeting-transcription",
+    "meeting-notes",
+    "api-client",
+    "sdk"
+  ],
   "sideEffects": false,
   "type": "commonjs",
   "main": "dist/index.js",
