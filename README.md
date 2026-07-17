@@ -264,7 +264,11 @@ try {
   } else if (error instanceof MyntloNotFoundError) {
     console.error('Meeting not found.');
   } else if (error instanceof MyntloRateLimitError) {
-    console.error('Rate limited — retry with backoff.');
+    // retryAfterSeconds is parsed from the response's Retry-After header
+    // when present (undefined otherwise). The client already retries
+    // automatically using this value - it's exposed here for callers that
+    // disable maxRetries or want to surface a wait time to the user.
+    console.error(`Rate limited — retry after ${error.retryAfterSeconds ?? '?'}s.`);
   } else if (error instanceof MyntloTimeoutError) {
     console.error('Processing timed out.');
   } else if (error instanceof MyntloAPIError) {

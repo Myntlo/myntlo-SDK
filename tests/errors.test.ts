@@ -46,6 +46,80 @@ describe('Myntlo errors', () => {
     await expect(client.meetings.list()).rejects.toBeInstanceOf(MyntloRateLimitError);
   });
 
+  it('surfaces retryAfterSeconds from a numeric Retry-After header', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: 'rate limit' }), {
+        status: 429,
+        headers: { ...jsonHeaders, 'retry-after': '42' },
+      }),
+    );
+
+    const client = new MyntloClient({ apiKey: 'test-key', maxRetries: 0 });
+
+    await expect(client.meetings.list()).rejects.toMatchObject({ retryAfterSeconds: 42 });
+  });
+
+  it('parses an HTTP-date Retry-After header into seconds-from-now', async () => {
+    const futureDate = new Date(Date.now() + 30_000);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: 'rate limit' }), {
+        status: 429,
+        headers: { ...jsonHeaders, 'retry-after': futureDate.toUTCString() },
+      }),
+    );
+
+    const client = new MyntloClient({ apiKey: 'test-key', maxRetries: 0 });
+
+    try {
+      await client.meetings.list();
+      expect.unreachable('expected MyntloRateLimitError to be thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MyntloRateLimitError);
+      const rateLimitErr = err as MyntloRateLimitError;
+      // Allow a little slack for test execution time between Date.now() calls.
+      expect(rateLimitErr.retryAfterSeconds).toBeGreaterThanOrEqual(28);
+      expect(rateLimitErr.retryAfterSeconds).toBeLessThanOrEqual(30);
+    }
+  });
+
+  it('leaves retryAfterSeconds undefined when the header is absent', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: 'rate limit' }), { status: 429, headers: jsonHeaders }),
+    );
+
+    const client = new MyntloClient({ apiKey: 'test-key', maxRetries: 0 });
+
+    await expect(client.meetings.list()).rejects.toMatchObject({ retryAfterSeconds: undefined });
+  });
+
+  it('waits for retryAfterSeconds (not exponential backoff) before an automatic retry', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ message: 'rate limit' }), {
+            status: 429,
+            headers: { ...jsonHeaders, 'retry-after': '7' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ meetings: [] }), { status: 200, headers: jsonHeaders }),
+        );
+
+      const client = new MyntloClient({ apiKey: 'test-key', maxRetries: 1 });
+      const listPromise = client.meetings.list();
+
+      await vi.advanceTimersByTimeAsync(6_900);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(200);
+      await listPromise;
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('verifies webhook signatures', async () => {
     const secret = 'whsec_test';
     const payload = JSON.stringify({ id: 'evt_1', type: 'meeting.processing' });

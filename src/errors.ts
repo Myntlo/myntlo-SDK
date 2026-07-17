@@ -5,6 +5,7 @@ export type MyntloErrorOptions = {
   requestId?: string | null;
   rawResponse?: unknown;
   details?: unknown;
+  retryAfterSeconds?: number;
 };
 
 export class MyntloError extends Error {
@@ -13,6 +14,9 @@ export class MyntloError extends Error {
   readonly requestId?: string | null;
   readonly rawResponse?: unknown;
   readonly details?: unknown;
+  /** Seconds to wait before retrying, parsed from the response's Retry-After
+   * header. Only ever set on MyntloRateLimitError. */
+  readonly retryAfterSeconds?: number;
 
   constructor(options: MyntloErrorOptions) {
     super(options.message);
@@ -22,6 +26,7 @@ export class MyntloError extends Error {
     this.requestId = options.requestId;
     this.rawResponse = options.rawResponse;
     this.details = options.details;
+    this.retryAfterSeconds = options.retryAfterSeconds;
   }
 
   isRetryable(): boolean {

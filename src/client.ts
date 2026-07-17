@@ -114,7 +114,7 @@ export class MyntloClient {
 
       const error = await createErrorFromResponse(response);
       if (shouldRetry(error) && attempt < this.maxRetries) {
-        await sleep(getRetryDelay(attempt));
+        await sleep(getRetryDelay(attempt, error));
         attempt += 1;
         continue;
       }
@@ -215,6 +215,7 @@ async function createErrorFromResponse(response: Response) {
       statusCode: response.status,
       requestId,
       rawResponse: raw,
+      retryAfterSeconds: parseRetryAfter(response.headers.get('retry-after')),
     });
   }
 
@@ -244,10 +245,30 @@ function shouldRetry(error: unknown): boolean {
   return false;
 }
 
-function getRetryDelay(attempt: number): number {
+function getRetryDelay(attempt: number, error?: unknown): number {
+  if (error instanceof MyntloRateLimitError && error.retryAfterSeconds !== undefined) {
+    return error.retryAfterSeconds * 1000;
+  }
   const base = 500;
   const jitter = Math.floor(Math.random() * 100);
   return base * Math.pow(2, attempt) + jitter;
+}
+
+// Retry-After is either a number of seconds or an HTTP-date (RFC 7231).
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return seconds;
+  }
+
+  const dateMs = Date.parse(value);
+  if (!Number.isNaN(dateMs)) {
+    return Math.max(0, Math.round((dateMs - Date.now()) / 1000));
+  }
+
+  return undefined;
 }
 
 function sleep(ms: number): Promise<void> {
