@@ -47,4 +47,25 @@ async function timingSafeEqualHex(expected: string, actual: string): Promise<boo
   }
 }
 
-export { computeHmacSHA256, bufferToHex, timingSafeEqualHex };
+// A validly-signed webhook payload stays valid forever if only the signature
+// is checked - anyone who ever saw one (a log line, a proxy, a compromised
+// downstream system) could replay it later to trigger the same side effects
+// again. Duck-types a createdAt field off the parsed payload (T is generic
+// in verifyWebhook, so this can't be a typed field access) and rejects
+// anything older, or further in the future, than toleranceSeconds allows -
+// a little future slack absorbs ordinary clock skew between sender/receiver.
+function isWebhookFresh(parsed: unknown, toleranceSeconds: number): boolean {
+  if (typeof parsed !== 'object' || parsed === null || !('createdAt' in parsed)) {
+    return false;
+  }
+  const createdAt = (parsed as { createdAt: unknown }).createdAt;
+  if (typeof createdAt !== 'string') return false;
+
+  const createdAtMs = Date.parse(createdAt);
+  if (Number.isNaN(createdAtMs)) return false;
+
+  const ageSeconds = (Date.now() - createdAtMs) / 1000;
+  return ageSeconds >= -toleranceSeconds && ageSeconds <= toleranceSeconds;
+}
+
+export { computeHmacSHA256, bufferToHex, timingSafeEqualHex, isWebhookFresh };

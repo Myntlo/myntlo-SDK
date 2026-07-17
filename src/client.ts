@@ -6,7 +6,7 @@ import {
   MyntloTimeoutError,
 } from './errors';
 import type { WebhookEvent } from './types';
-import { computeHmacSHA256, timingSafeEqualHex } from './internal/webhookCrypto';
+import { computeHmacSHA256, timingSafeEqualHex, isWebhookFresh } from './internal/webhookCrypto';
 import { ActionItemsResource } from './resources/actionItems';
 import { DecisionsResource } from './resources/decisions';
 import { MeetingsResource } from './resources/meetings';
@@ -53,11 +53,19 @@ export class MyntloClient {
     this.uploads = new UploadsResource(this);
   }
 
-  /** Verify a webhook signature and parse the event payload. */
+  /**
+   * Verify a webhook signature and parse the event payload.
+   * @param toleranceSeconds - If set, also reject payloads whose createdAt
+   * is older (or, allowing for clock skew, further in the future) than this
+   * many seconds - protects against a leaked, validly-signed payload being
+   * replayed later. Off by default for backward compatibility; pass 300
+   * (5 minutes) unless you have a reason not to.
+   */
   static async verifyWebhook<T = WebhookEvent>(
     payload: string | Uint8Array,
     signature: string,
     secret: string,
+    toleranceSeconds?: number,
   ): Promise<T> {
     const payloadBytes = typeof payload === 'string' ? new TextEncoder().encode(payload) : payload;
     const expected = await computeHmacSHA256(payloadBytes, secret);
@@ -71,7 +79,16 @@ export class MyntloClient {
     }
 
     const payloadText = typeof payload === 'string' ? payload : new TextDecoder().decode(payload);
-    return JSON.parse(payloadText) as T;
+    const parsed = JSON.parse(payloadText) as T;
+
+    if (toleranceSeconds !== undefined && !isWebhookFresh(parsed, toleranceSeconds)) {
+      throw new MyntloAuthError({
+        message: 'Webhook payload is outside the allowed freshness window.',
+        statusCode: 401,
+      });
+    }
+
+    return parsed;
   }
 
   /** Perform a request against the Myntlo API. */

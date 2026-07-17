@@ -76,6 +76,88 @@ describe('webhook signature verification', () => {
   });
 });
 
+describe('webhook freshness (replay protection)', () => {
+  const secret = 'whsec_test';
+
+  it('accepts a payload within the tolerance window when toleranceSeconds is set', async () => {
+    const payload = JSON.stringify({
+      id: 'evt_1',
+      type: 'meeting.processing',
+      createdAt: new Date(Date.now() - 10_000).toISOString(),
+    });
+    const signature = await signWebhook(payload, secret);
+
+    const event = await verifyMyntloWebhook<{ createdAt: string }>({
+      payload,
+      signature,
+      secret,
+      toleranceSeconds: 300,
+    });
+
+    expect(event.createdAt).toBeDefined();
+  });
+
+  it('rejects a payload older than the tolerance window', async () => {
+    const payload = JSON.stringify({
+      id: 'evt_1',
+      type: 'meeting.processing',
+      createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    const signature = await signWebhook(payload, secret);
+
+    await expect(
+      verifyMyntloWebhook({ payload, signature, secret, toleranceSeconds: 300 }),
+    ).rejects.toBeInstanceOf(MyntloAuthError);
+  });
+
+  it('rejects a payload timestamped too far in the future (beyond reasonable clock skew)', async () => {
+    const payload = JSON.stringify({
+      id: 'evt_1',
+      type: 'meeting.processing',
+      createdAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    });
+    const signature = await signWebhook(payload, secret);
+
+    await expect(
+      verifyMyntloWebhook({ payload, signature, secret, toleranceSeconds: 300 }),
+    ).rejects.toBeInstanceOf(MyntloAuthError);
+  });
+
+  it('rejects a payload with no createdAt field when toleranceSeconds is set', async () => {
+    const payload = JSON.stringify({ id: 'evt_1', type: 'meeting.processing' });
+    const signature = await signWebhook(payload, secret);
+
+    await expect(
+      verifyMyntloWebhook({ payload, signature, secret, toleranceSeconds: 300 }),
+    ).rejects.toBeInstanceOf(MyntloAuthError);
+  });
+
+  it('does not check freshness at all when toleranceSeconds is omitted (backward compatible)', async () => {
+    const payload = JSON.stringify({
+      id: 'evt_1',
+      type: 'meeting.processing',
+      createdAt: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    const signature = await signWebhook(payload, secret);
+
+    const event = await verifyMyntloWebhook<{ id: string }>({ payload, signature, secret });
+    expect(event.id).toBe('evt_1');
+  });
+
+  it('MyntloClient.verifyWebhook also supports the optional toleranceSeconds parameter', async () => {
+    const stalePayload = JSON.stringify({
+      id: 'evt_1',
+      type: 'meeting.processing',
+      createdAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    const signature = await signWebhook(stalePayload, secret);
+
+    await expect(
+      MyntloClient.verifyWebhook(stalePayload, signature, secret, 300),
+    ).rejects.toBeInstanceOf(MyntloAuthError);
+  });
+});
+
 async function signWebhook(payload: string, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const payloadBytes = encoder.encode(payload);

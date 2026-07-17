@@ -231,6 +231,7 @@ const event = await verifyMyntloWebhook({
   payload: request.body,           // raw request body (string or Buffer)
   signature: request.headers['myntlo-signature'],
   secret: process.env.MYNTLO_WEBHOOK_SECRET!,
+  toleranceSeconds: 300,           // recommended - see "Replay protection" below
 });
 
 console.log(event.type);  // e.g. "meeting.completed"
@@ -240,8 +241,17 @@ console.log(event.data);
 Or via the static method on `MyntloClient`:
 
 ```ts
-const event = await MyntloClient.verifyWebhook(payload, signature, secret);
+const event = await MyntloClient.verifyWebhook(payload, signature, secret, 300);
 ```
+
+**Replay protection:** signature verification alone only proves a payload was
+signed with your webhook secret - it stays validly-signed forever. If a
+payload is ever logged, proxied, or leaked, that copy can be replayed later
+to trigger the same side effects again. Pass `toleranceSeconds` (both
+functions accept it - 300 is a reasonable default) to also reject payloads
+whose `createdAt` is older, or further in the future, than that window
+allows. It's opt-in rather than the default, since not every consumer needs
+it and it's a behavior change existing integrations may not expect.
 
 ## Error handling
 
