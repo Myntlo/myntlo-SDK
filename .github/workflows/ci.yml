@@ -86,8 +86,11 @@ jobs:
 
       - run: npm run build
 
-      - name: Verify dist exports
+      - name: Verify dist exports (CJS)
         run: node -e "const sdk = require('./dist/index.js'); if (!sdk.MyntloClient) throw new Error('MyntloClient not exported')"
+
+      - name: Verify dist exports (ESM)
+        run: node --input-type=module -e "import * as sdk from './dist/index.mjs'; if (!sdk.MyntloClient) throw new Error('MyntloClient not exported')"
 
       - uses: actions/upload-artifact@v4
         with:
