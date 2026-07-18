@@ -44,6 +44,27 @@ jobs:
 
       - run: npx tsc --noEmit
 
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # OSS gitleaks image directly, not the gitleaks-action marketplace
+      # wrapper (requires a paid license for org accounts). Pinned to
+      # v8.21.2, NOT :latest - verified locally that gitleaks 8.30.1 has a
+      # real detection regression (confirmed via a source build, not just
+      # the published binary) where several rules, including the critical
+      # private-key rule, silently produce zero findings on content their
+      # own regex correctly matches. Re-verify detection still works (e.g.
+      # against a throwaway repo with a fake PEM block) before bumping this.
+      - name: Run gitleaks
+        run: |
+          docker run --rm -v "$(pwd):/repo" zricethezav/gitleaks:v8.21.2 detect \
+            --source /repo --redact --exit-code 1
+
   test:
     name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
