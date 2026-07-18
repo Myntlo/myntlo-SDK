@@ -2,7 +2,7 @@
 import { createReadStream } from 'node:fs';
 import { MyntloClient } from '../src';
 
-const myntlo = new MyntloClient({ apiKey: process.env.MYNTLO_API_KEY ?? '' });
+const myntlo = new MyntloClient({ apiKey: process.env.MYNTLO_API_KEY! });
 
 async function run() {
   const meeting = await myntlo.meetings.upload({

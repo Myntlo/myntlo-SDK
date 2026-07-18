@@ -13,7 +13,10 @@ async function handleWebhookRequest(rawBody: string, signatureHeader: string | u
   const event = await verifyMyntloWebhook<WebhookEvent>({
     payload: rawBody,
     signature: signatureHeader,
-    secret: process.env.MYNTLO_WEBHOOK_SECRET ?? '',
+    // Fail fast if unset - an empty-string secret would make signature
+    // verification trivially bypassable (anyone can compute
+    // HMAC('', payload) without knowing the real secret).
+    secret: process.env.MYNTLO_WEBHOOK_SECRET!,
     toleranceSeconds: 300,
   });
 
