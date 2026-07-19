@@ -116,7 +116,7 @@ jobs:
 
       - name: Upload coverage
         if: matrix.node == 20
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage/
@@ -143,7 +143,7 @@ jobs:
       - name: Verify dist exports (ESM)
         run: node --input-type=module -e "import * as sdk from './dist/index.mjs'; if (!sdk.MyntloClient) throw new Error('MyntloClient not exported')"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
