@@ -60,10 +60,40 @@ jobs:
       # private-key rule, silently produce zero findings on content their
       # own regex correctly matches. Re-verify detection still works (e.g.
       # against a throwaway repo with a fake PEM block) before bumping this.
+      # Pinned by digest, not just the v8.21.2 tag - a compromised
+      # zricethezav Docker Hub account could otherwise move the tag to a
+      # different image. Digest covers the same multi-arch manifest as
+      # v8.21.2 (verified via the Docker Hub API on 2026-07-18).
       - name: Run gitleaks
         run: |
-          docker run --rm -v "$(pwd):/repo" zricethezav/gitleaks:v8.21.2 detect \
+          docker run --rm -v "$(pwd):/repo" zricethezav/gitleaks@sha256:0e99e8821643ea5b235718642b93bb32486af9c8162c8b8731f7cbdc951a7f46 detect \
             --source /repo --redact --exit-code 1
+
+  security:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Blocking on production deps only, not the main Myntlo repo's
+      # unqualified pattern - this SDK has zero runtime dependencies
+      # (re-confirmed 2026-07-18: npm audit --omit=dev shows 0
+      # vulnerabilities), so every current finding is in the dev tooling
+      # chain (eslint/vitest/tsup), never shipped to consumers. Gating on
+      # that would fail CI on dev-tooling noise instead of real risk.
+      # Full picture (incl. dev deps) still surfaces below, non-blocking.
+      - run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit including devDependencies (advisory, non-blocking)
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
 
   test:
     name: Test (Node ${{ matrix.node }})
