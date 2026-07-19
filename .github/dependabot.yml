@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # This SDK has zero runtime dependencies by design (see README) - all
+    # updates here are devDependencies (eslint/vitest/tsup/typescript).
+    # Still worth automating: dev-tooling vulnerabilities are lower
+    # stakes than production ones, but a stale toolchain is still how
+    # "no runtime deps" quietly stops being true if someone later adds one
+    # without anyone checking.
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Also keeps SHA-pinned actions/images (see ci.yml, release.yml)
+    # current - Dependabot updates pinned SHAs/digests too, so pinning
+    # for supply-chain safety doesn't mean falling permanently behind.
