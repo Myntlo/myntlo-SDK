@@ -53,6 +53,18 @@ describe('webhook signature verification', () => {
     ).rejects.toBeInstanceOf(MyntloAuthError);
   });
 
+  it('rejects an empty secret outright, on both entry points, instead of "verifying" against it', async () => {
+    // An empty secret makes HMAC('', payload) trivially reproducible by
+    // anyone - this must be rejected before ever computing a signature (an
+    // empty HMAC key isn't even computable via WebCrypto), not silently
+    // "verified" against a key with no security value. Any signature
+    // string works here - the empty-secret check must short-circuit first.
+    const signature = await signWebhook(payload, secret);
+
+    await expect(MyntloClient.verifyWebhook(payload, signature, '')).rejects.toBeInstanceOf(MyntloAuthError);
+    await expect(verifyMyntloWebhook({ payload, signature, secret: '' })).rejects.toBeInstanceOf(MyntloAuthError);
+  });
+
   it('MyntloClient.verifyWebhook rejects a signature with equal JS .length but different encoded byte length', async () => {
     const signature = await signWebhook(payload, secret);
     // Same string .length as `signature` (a 64-char hex digest), but a multi-byte

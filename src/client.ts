@@ -6,7 +6,7 @@ import {
   MyntloTimeoutError,
 } from './errors';
 import type { WebhookEvent } from './types';
-import { computeHmacSHA256, timingSafeEqualHex, isWebhookFresh } from './internal/webhookCrypto';
+import { verifyMyntloWebhook } from './webhooks';
 import { ActionItemsResource } from './resources/actionItems';
 import { DecisionsResource } from './resources/decisions';
 import { MeetingsResource } from './resources/meetings';
@@ -67,28 +67,7 @@ export class MyntloClient {
     secret: string,
     toleranceSeconds?: number,
   ): Promise<T> {
-    const payloadBytes = typeof payload === 'string' ? new TextEncoder().encode(payload) : payload;
-    const expected = await computeHmacSHA256(payloadBytes, secret);
-    const isValid = await timingSafeEqualHex(expected, signature);
-
-    if (!isValid) {
-      throw new MyntloAuthError({
-        message: 'Invalid webhook signature.',
-        statusCode: 401,
-      });
-    }
-
-    const payloadText = typeof payload === 'string' ? payload : new TextDecoder().decode(payload);
-    const parsed = JSON.parse(payloadText) as T;
-
-    if (toleranceSeconds !== undefined && !isWebhookFresh(parsed, toleranceSeconds)) {
-      throw new MyntloAuthError({
-        message: 'Webhook payload is outside the allowed freshness window.',
-        statusCode: 401,
-      });
-    }
-
-    return parsed;
+    return verifyMyntloWebhook<T>({ payload, signature, secret, toleranceSeconds });
   }
 
   /** Perform a request against the Myntlo API. */

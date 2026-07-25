@@ -1,12 +1,10 @@
 import { MyntloAuthError } from './errors';
 import { computeHmacSHA256, timingSafeEqualHex, isWebhookFresh } from './internal/webhookCrypto';
 
-// TODO: Backend webhook signing format required:
-// The Myntlo API must sign outgoing webhook payloads using HMAC-SHA256.
-// Signing algorithm: HMAC-SHA256(webhookSecret, rawRequestBody) → lowercase hex string
-// The resulting hex digest must be sent in the HTTP header: `myntlo-signature`
-// Example (Node.js): createHmac('sha256', secret).update(rawBody).digest('hex')
-// The webhook secret is configured per endpoint in the Myntlo dashboard.
+// Backend webhook signing format (implemented server-side as of 2026-07-25):
+// HMAC-SHA256(webhookSecret, rawRequestBody) → lowercase hex string, sent in
+// the `myntlo-signature` header. The webhook secret is generated once, shown
+// exactly once, when registering an endpoint (Settings > Developer).
 
 export type VerifyWebhookInput = {
   payload: string | Uint8Array;
@@ -27,6 +25,17 @@ export type VerifyWebhookInput = {
 
 export async function verifyMyntloWebhook<T = unknown>(input: VerifyWebhookInput): Promise<T> {
   const { payload, signature, secret, toleranceSeconds } = input;
+
+  // An empty secret would make HMAC('', payload) trivially reproducible by
+  // anyone - reject it outright rather than "verifying" against a key that
+  // provides no security (e.g. a misconfigured secrets manager returning "").
+  if (!secret) {
+    throw new MyntloAuthError({
+      message: 'Webhook secret must not be empty.',
+      statusCode: 401,
+    });
+  }
+
   const payloadBytes = typeof payload === 'string' ? new TextEncoder().encode(payload) : payload;
   const expected = await computeHmacSHA256(payloadBytes, secret);
 
