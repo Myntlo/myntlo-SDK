@@ -28,6 +28,12 @@ export type MeetingStatusResponse = {
   stage?: ProcessingStage;
 };
 
+/** One event from MeetingsResource.watchStatus()'s server-sent stream. */
+export type MeetingStatusEvent = {
+  processingStage: ProcessingStage;
+  errorMessage?: string | null;
+};
+
 export type MeetingTranscript = {
   meetingId: string;
   transcript: string;

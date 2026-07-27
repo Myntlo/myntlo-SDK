@@ -108,6 +108,15 @@ const meeting = await myntlo.meetings.waitUntilDone(meeting.id, {
 console.log('Processing complete:', meeting.status); // "done"
 ```
 
+For a live progress indicator (e.g. "Transcribing...", "Extracting insights...") instead of just a final result, stream stage transitions in real time rather than polling:
+
+```ts
+for await (const event of myntlo.meetings.watchStatus(meeting.id)) {
+  console.log(event.processingStage); // "transcribing", "extracting_insights", "done", ...
+}
+// The loop ends automatically after a terminal stage ("done" or "failed").
+```
+
 ## Reading meeting intelligence
 
 ```ts
@@ -323,6 +332,7 @@ new MyntloClient({
 myntlo.meetings.list(options?: ListOptions): Promise<ListResponse<Meeting>>
 myntlo.meetings.get(id: string): Promise<Meeting>
 myntlo.meetings.getStatus(id: string): Promise<MeetingStatusResponse>
+myntlo.meetings.watchStatus(id: string): AsyncGenerator<MeetingStatusEvent>
 myntlo.meetings.update(id: string, data: MeetingUpdateInput): Promise<Meeting>
 myntlo.meetings.delete(id: string): Promise<void>
 myntlo.meetings.export(id: string, { format: MeetingExportFormat }): Promise<string>

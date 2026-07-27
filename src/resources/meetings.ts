@@ -4,6 +4,7 @@ import type {
   Meeting,
   MeetingExportFormat,
   MeetingExtractions,
+  MeetingStatusEvent,
   MeetingStatusResponse,
   MeetingTranscript,
   PaginationIteratorOptions,
@@ -54,6 +55,66 @@ export class MeetingsResource {
 
   getStatus(id: string): Promise<MeetingStatusResponse> {
     return this.client.request('GET', `/meetings/${encodeURIComponent(id)}/status`);
+  }
+
+  /**
+   * Streams processing-stage transitions in real time instead of polling
+   * getStatus()/waitUntilDone(). Ends the generator (and closes the
+   * connection) after yielding a terminal stage ('done' or 'failed'), or
+   * when the caller stops iterating (e.g. `break`).
+   *
+   * @remarks Server-side only - sends your full API key with every
+   * connection, same as the rest of this client.
+   */
+  async *watchStatus(id: string): AsyncGenerator<MeetingStatusEvent> {
+    const url = this.client.resolveUrl(`/meetings/${encodeURIComponent(id)}/status/stream`);
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${this.client.getApiKey()}`, Accept: 'text/event-stream' },
+    });
+
+    if (!response.ok || !response.body) {
+      throw new MyntloAPIError({
+        message: `Failed to open status stream (${response.status}).`,
+        statusCode: response.status,
+      });
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let boundary: number;
+        while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+          const rawEvent = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+
+          const dataLines = rawEvent
+            .split('\n')
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).trim());
+          if (dataLines.length === 0) continue; // e.g. a ": keepalive" comment line
+
+          const event = JSON.parse(dataLines.join('')) as MeetingStatusEvent;
+          yield event;
+
+          if (event.processingStage === 'done' || event.processingStage === 'failed') {
+            return;
+          }
+        }
+      }
+    } finally {
+      // Ensures the server-side connection is released promptly if the
+      // caller stops iterating early (e.g. `break` in a for-await loop),
+      // rather than waiting out the server's own idle timeout.
+      await reader.cancel().catch(() => {});
+    }
   }
 
   update(id: string, data: MeetingUpdateInput): Promise<Meeting> {
