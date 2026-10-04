@@ -272,7 +272,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 function isAbortError(error: unknown): boolean {
-  return Boolean(error && typeof error === 'object' && (error as { name?: string }).name === 'AbortError');
+  return Boolean(
+    error && typeof error === 'object' && (error as { name?: string }).name === 'AbortError',
+  );
 }
 
 function createTimeoutSignal(timeoutMs: number): AbortSignal {
