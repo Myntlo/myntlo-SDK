@@ -3,12 +3,7 @@ import type { Decision } from './decision';
 
 export type MeetingStatus = 'pending' | 'processing' | 'done' | 'failed';
 
-export type ProcessingStage =
-  | 'queued'
-  | 'transcribing'
-  | 'extracting_insights'
-  | 'done'
-  | 'failed';
+export type ProcessingStage = 'queued' | 'transcribing' | 'extracting_insights' | 'done' | 'failed';
 
 export type MeetingExportFormat = 'pdf' | 'docx' | 'txt' | 'json';
 
