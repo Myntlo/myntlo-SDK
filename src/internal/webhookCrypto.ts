@@ -1,6 +1,10 @@
-async function computeHmacSHA256(payload: Uint8Array | ArrayBuffer, secret: string): Promise<string> {
+async function computeHmacSHA256(
+  payload: Uint8Array | ArrayBuffer,
+  secret: string,
+): Promise<string> {
   if (globalThis.crypto?.subtle) {
-    const payloadBytes = payload instanceof Uint8Array ? new Uint8Array(payload) : new Uint8Array(payload);
+    const payloadBytes =
+      payload instanceof Uint8Array ? new Uint8Array(payload) : new Uint8Array(payload);
     const key = await globalThis.crypto.subtle.importKey(
       'raw',
       new TextEncoder().encode(secret),
