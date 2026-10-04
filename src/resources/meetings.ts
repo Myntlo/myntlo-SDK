@@ -140,8 +140,10 @@ export class MeetingsResource {
    */
   async upload(input: UploadInput): Promise<Meeting> {
     const { file, title, participantEmails } = input;
-    const filename = file instanceof File ? file.name : 'upload';
-    const contentType = file instanceof File && file.type ? file.type : 'audio/mpeg';
+    // File is not a global on Node 18, so guard before instanceof.
+    const isFile = typeof File !== 'undefined' && file instanceof File;
+    const filename = isFile ? file.name : 'upload';
+    const contentType = isFile && file.type ? file.type : 'audio/mpeg';
     const size = file instanceof Blob ? file.size : undefined;
 
     const presigned = await this.client.request<PresignedUrlResult>('POST', '/uploads/presign', {
